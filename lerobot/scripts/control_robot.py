@@ -282,6 +282,10 @@ def record(
         # if multi_task:
         #     task = input("Enter your task description: ")
 
+        if policy is None:
+            episode_index = dataset.num_episodes
+            robot.prerecord_episode(episode_index)
+
         log_say(f"Recording episode {dataset.num_episodes}", play_sounds)
         record_episode(
             dataset=dataset,

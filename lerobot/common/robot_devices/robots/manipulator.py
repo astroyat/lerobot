@@ -350,6 +350,19 @@ class ManipulatorRobot:
 
         self.is_connected = True
 
+        if self.robot_type in ["so100"]:
+            is_grabber = False
+            for name in self.leader_arms:
+                if self.leader_arms[name].motors["gripper"][1] == "grabber":
+                    is_grabber = True
+            if is_grabber is True:
+                from grabber import Grabber
+                grabber = Grabber()
+                grabber.set_robot(self)
+                for name in self.leader_arms:
+                    self.leader_arms[name].set_grabber(grabber)
+
+
     def activate_calibration(self):
         """After calibration all motors function in human interpretable ranges.
         Rotations are expressed in degrees in nominal range of [-180, 180],
@@ -498,8 +511,12 @@ class ManipulatorRobot:
             self.follower_arms[name].write("Lock", 0)
             # Set Maximum_Acceleration to 254 to speedup acceleration and deceleration of
             # the motors. Note: this configuration is not in the official STS3215 Memory Table
-            self.follower_arms[name].write("Maximum_Acceleration", 254)
-            self.follower_arms[name].write("Acceleration", 254)
+            self.follower_arms[name].write("Maximum_Acceleration", 10)
+            self.follower_arms[name].write("Acceleration", 10)
+
+    def prerecord_episode(self, episode_index):
+        for name in self.leader_arms:
+            return self.leader_arms[name].prerecord_episode(episode_index)
 
     def teleop_step(
         self, record_data=False
@@ -514,14 +531,18 @@ class ManipulatorRobot:
         for name in self.leader_arms:
             before_lread_t = time.perf_counter()
             leader_pos[name] = self.leader_arms[name].read("Present_Position")
-            leader_pos[name] = torch.from_numpy(leader_pos[name])
-            self.logs[f"read_leader_{name}_pos_dt_s"] = time.perf_counter() - before_lread_t
+            if leader_pos[name] is not None:
+                leader_pos[name] = torch.from_numpy(leader_pos[name])
+                self.logs[f"read_leader_{name}_pos_dt_s"] = time.perf_counter() - before_lread_t
 
         # Send goal position to the follower
         follower_goal_pos = {}
         for name in self.follower_arms:
             before_fwrite_t = time.perf_counter()
             goal_pos = leader_pos[name]
+            if goal_pos is None:
+                goal_pos = self.follower_arms[name].read("Present_Position")
+                goal_pos = torch.from_numpy(goal_pos)
 
             # Cap goal position when too far away from present position.
             # Slower fps expected due to reading from the follower.
@@ -533,7 +554,7 @@ class ManipulatorRobot:
             # Used when record_data=True
             follower_goal_pos[name] = goal_pos
 
-            goal_pos = goal_pos.numpy().astype(np.int32)
+            goal_pos = goal_pos.numpy()
             self.follower_arms[name].write("Goal_Position", goal_pos)
             self.logs[f"write_follower_{name}_goal_pos_dt_s"] = time.perf_counter() - before_fwrite_t
 
@@ -655,7 +676,7 @@ class ManipulatorRobot:
             action_sent.append(goal_pos)
 
             # Send goal position to each follower
-            goal_pos = goal_pos.numpy().astype(np.int32)
+            goal_pos = goal_pos.numpy()
             self.follower_arms[name].write("Goal_Position", goal_pos)
 
         return torch.cat(action_sent)
