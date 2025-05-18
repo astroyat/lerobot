@@ -118,6 +118,22 @@ def run_lekiwi(robot_config):
     # Define the expected arm motor IDs.
     arm_motor_ids = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
 
+    for motor in arm_motor_ids:
+        # Mode=0 for Position Control
+        motors_bus.write("Mode", 0, motor)
+        # Set P_Coefficient to lower value to avoid shakiness (Default is 32)
+        motors_bus.write("P_Coefficient", 16, motor)
+        # Set I_Coefficient and D_Coefficient to default value 0 and 32
+        motors_bus.write("I_Coefficient", 0, motor)
+        motors_bus.write("D_Coefficient", 32, motor)
+        # Close the write lock so that Maximum_Acceleration gets written to EPROM address,
+        # which is mandatory for Maximum_Acceleration to take effect after rebooting.
+        motors_bus.write("Lock", 0, motor)
+        # Set Maximum_Acceleration to 10 to slowdown acceleration and deceleration of
+        # the 12V motors. Note: this configuration is not in the official STS3215 Memory Table
+        motors_bus.write("Maximum_Acceleration", 10, motor)
+        motors_bus.write("Acceleration", 10, motor)
+
     # Disable torque for each arm motor.
     for motor in arm_motor_ids:
         motors_bus.write("Torque_Enable", TorqueMode.DISABLED.value, motor)
@@ -210,7 +226,7 @@ def run_lekiwi(robot_config):
             # Ensure a short sleep to avoid overloading the CPU.
             elapsed = time.time() - loop_start_time
             time.sleep(
-                max(0.033 - elapsed, 0)
+                max(0.1 - elapsed, 0)
             )  # If robot jitters increase the sleep and monitor cpu load with `top` in cmd
     except KeyboardInterrupt:
         print("Shutting down LeKiwi server.")

@@ -78,7 +78,10 @@ class MobileManipulator:
 
         self.follower_arms = make_motors_buses_from_configs(self.config.follower_arms)
 
-        self.cameras = make_cameras_from_configs(self.config.cameras)
+        self.cameras = self.config.cameras
+
+        self.node = None
+        self.spin_thread = None
 
         self.is_connected = False
 
@@ -88,9 +91,9 @@ class MobileManipulator:
 
         # Define three speed levels and a current index
         self.speed_levels = [
-            {"xy": 0.1, "theta": 30},  # slow
-            {"xy": 0.2, "theta": 60},  # medium
-            {"xy": 0.3, "theta": 90},  # fast
+            {"xy": 0.1, "theta": 20},  # slow
+            {"xy": 0.2, "theta": 40},  # medium
+            {"xy": 0.3, "theta": 60},  # fast
         ]
         self.speed_index = 0  # Start at slow
 
@@ -235,9 +238,32 @@ class MobileManipulator:
         except AttributeError:
             pass
 
+
+    def listener_callback(self, msg):
+
+        print(f"x={msg.linear.x:.2f} z={msg.angular.z:.2f}")
+        if msg.linear.x > 0.1:
+            self.pressed_keys["forward"] = True
+            self.pressed_keys["backward"] = False
+        elif msg.linear.x < -0.1:
+            self.pressed_keys["forward"] = False
+            self.pressed_keys["backward"] = True
+        else:
+            self.pressed_keys["forward"] = False
+            self.pressed_keys["backward"] = False
+
+        if msg.angular.z > 0.1:
+            self.pressed_keys["rotate_left"] = True
+            self.pressed_keys["rotate_right"] = False
+        elif msg.angular.z < -0.1:
+            self.pressed_keys["rotate_left"] = False
+            self.pressed_keys["rotate_right"] = True
+        else:
+            self.pressed_keys["rotate_left"] = False
+            self.pressed_keys["rotate_right"] = False
+
+
     def connect(self):
-        if not self.leader_arms:
-            raise ValueError("MobileManipulator has no leader arm to connect.")
         for name in self.leader_arms:
             print(f"Connecting {name} leader arm.")
             self.calibrate_leader()
@@ -252,6 +278,21 @@ class MobileManipulator:
         video_connection = f"tcp://{self.remote_ip}:{self.remote_port_video}"
         self.video_socket.connect(video_connection)
         self.video_socket.setsockopt(zmq.CONFLATE, 1)
+
+        import rclpy
+        from rclpy.node import Node
+        from geometry_msgs.msg import Twist
+        import threading
+        from functools import partial
+
+        rclpy.init()
+        self.node = Node("cmd_vel_subscriber")
+        self.node.create_subscription(
+            Twist, "cmd_vel", partial(self.listener_callback), 10
+        )
+        self.spin_thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
+        self.spin_thread.start()
+
         print(
             f"[INFO] Connected to remote robot at {connection_string} and video stream at {video_connection}."
         )
@@ -405,8 +446,9 @@ class MobileManipulator:
         arm_positions = []
         for name in self.leader_arms:
             pos = self.leader_arms[name].read("Present_Position")
-            pos_tensor = torch.from_numpy(pos).float()
-            arm_positions.extend(pos_tensor.tolist())
+            if pos is not None:
+                pos_tensor = torch.from_numpy(pos).float()
+                arm_positions.extend(pos_tensor.tolist())
 
         y_cmd = 0.0  # m/s forward/backward
         x_cmd = 0.0  # m/s lateral
@@ -512,6 +554,25 @@ class MobileManipulator:
 
         return action
 
+    def get_arm(self):
+        found = False
+        while found is False:
+            observation = self.capture_observation()
+            pos = observation["observation.state"].tolist()[:6]
+            found = any(abs(x) > 0.0 for x in pos)
+        return pos
+
+    def set_arm(self, pos):
+        message = {
+            "raw_velocity": {"left_wheel": 0, "back_wheel": 0, "right_wheel": 0},
+            "arm_positions": pos}
+        self.cmd_socket.send_string(json.dumps(message))
+
+    def set_wheel(self, x, y, theta):
+        wheel_commands = self.body_to_wheel_raw(x, y, theta)
+        message = {"raw_velocity": wheel_commands, "arm_positions": []}
+        self.cmd_socket.send_string(json.dumps(message))
+
     def print_logs(self):
         pass
 
@@ -521,7 +582,7 @@ class MobileManipulator:
         if self.cmd_socket:
             stop_cmd = {
                 "raw_velocity": {"left_wheel": 0, "back_wheel": 0, "right_wheel": 0},
-                "arm_positions": {},
+                "arm_positions": [],
             }
             self.cmd_socket.send_string(json.dumps(stop_cmd))
             self.cmd_socket.close()
@@ -531,6 +592,12 @@ class MobileManipulator:
             self.context.term()
         if PYNPUT_AVAILABLE:
             self.listener.stop()
+        if self.node:
+            import rclpy
+            self.node.destroy_node()
+            rclpy.shutdown()
+        if self.spin_thread:
+            self.spin_thread.join()
         self.is_connected = False
         print("[INFO] Disconnected from remote robot.")
 
@@ -700,4 +767,5 @@ class LeKiwi:
     def stop(self):
         """Stops the robot by setting all motor speeds to zero."""
         self.motor_bus.write("Goal_Speed", [0, 0, 0], self.motor_ids)
+        self.motor_bus.write("Torque_Enable", [0, 0, 0], self.motor_ids)
         print("Motors stopped.")
