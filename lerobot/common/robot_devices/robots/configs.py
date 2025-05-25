@@ -26,6 +26,7 @@ from lerobot.common.robot_devices.cameras.configs import (
 from lerobot.common.robot_devices.motors.configs import (
     DynamixelMotorsBusConfig,
     FeetechMotorsBusConfig,
+    CsvfileMotorsBusConfig,
     MotorsBusConfig,
 )
 
@@ -608,9 +609,6 @@ class LeKiwiRobotConfig(RobotConfig):
 
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
-            "front": OpenCVCameraConfig(
-                camera_index="/dev/video2", fps=30, width=640, height=480
-            ),
             "wrist": OpenCVCameraConfig(
                 camera_index="/dev/video0", fps=30, width=640, height=480
             ),
@@ -621,6 +619,18 @@ class LeKiwiRobotConfig(RobotConfig):
 
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
+            "main": CsvfileMotorsBusConfig(
+                port="arm.csv",
+                motors={
+                    # name: (index, model)
+                    "shoulder_pan": [1, "grabber"],
+                    "shoulder_lift": [2, "grabber"],
+                    "elbow_flex": [3, "grabber"],
+                    "wrist_flex": [4, "grabber"],
+                    "wrist_roll": [5, "grabber"],
+                    "gripper": [6, "grabber"],
+                },
+            ),
         }
     )
 

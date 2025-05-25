@@ -296,6 +296,9 @@ def record(
             break
 
         log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
+        episode_index = dataset.num_episodes
+        robot.record_episode_pre(episode_index, policy)
+
         record_episode(
             robot=robot,
             dataset=dataset,
@@ -326,6 +329,8 @@ def record(
 
         dataset.save_episode()
         recorded_episodes += 1
+
+        robot.record_episode_post()
 
         if events["stop_recording"]:
             break

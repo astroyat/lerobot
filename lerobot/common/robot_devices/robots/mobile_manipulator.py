@@ -80,6 +80,8 @@ class MobileManipulator:
 
         self.cameras = self.config.cameras
 
+        self.grabber = None
+
         self.node = None
         self.spin_thread = None
 
@@ -91,6 +93,7 @@ class MobileManipulator:
 
         # Define three speed levels and a current index
         self.speed_levels = [
+            {"xy": 0.02, "theta": 5},  # very slow
             {"xy": 0.1, "theta": 20},  # slow
             {"xy": 0.2, "theta": 40},  # medium
             {"xy": 0.3, "theta": 60},  # fast
@@ -298,6 +301,19 @@ class MobileManipulator:
         )
         self.is_connected = True
 
+        if self.robot_type in ["lekiwi"]:
+            is_grabber = False
+            for name in self.leader_arms:
+                if self.leader_arms[name].motors["gripper"][1] == "grabber":
+                    is_grabber = True
+            if is_grabber is True:
+                from grabber import Grabber
+                self.grabber = Grabber()
+                self.grabber.mobile_robot = self
+                for name in self.leader_arms:
+                    self.grabber.set_leader_arm(self.leader_arms[name])
+                    self.leader_arms[name].set_grabber(self.grabber)
+
     def load_or_run_calibration_(self, name, arm, arm_type):
         arm_id = get_arm_id(name, arm_type)
         arm_calib_path = self.calibration_dir / f"{arm_id}.json"
@@ -432,6 +448,13 @@ class MobileManipulator:
                 state_tensor[2] = decoded["3"]
         return state_tensor
 
+    def record_episode_pre(self, episode_index, policy):
+        for name in self.leader_arms:
+            return self.leader_arms[name].record_episode_pre(episode_index, policy)
+
+    def record_episode_post(self):
+        return self.grabber.record_episode_post()
+
     def teleop_step(
         self, record_data: bool = False
     ) -> None | tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
@@ -515,6 +538,8 @@ class MobileManipulator:
             if frame is None:
                 # Create a black image using the camera's configured width, height, and channels
                 frame = np.zeros((cam.height, cam.width, cam.channels), dtype=np.uint8)
+            if self.grabber is not None:
+                self.grabber.record_episode_run(frame)
             obs_dict[f"observation.images.{cam_name}"] = torch.from_numpy(frame)
 
         return obs_dict

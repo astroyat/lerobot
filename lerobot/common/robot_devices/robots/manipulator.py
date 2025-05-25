@@ -164,6 +164,7 @@ class ManipulatorRobot:
         self.leader_arms = make_motors_buses_from_configs(self.config.leader_arms)
         self.follower_arms = make_motors_buses_from_configs(self.config.follower_arms)
         self.cameras = make_cameras_from_configs(self.config.cameras)
+        self.grabber = None
         self.is_connected = False
         self.logs = {}
 
@@ -290,6 +291,19 @@ class ManipulatorRobot:
             self.cameras[name].connect()
 
         self.is_connected = True
+
+        if self.robot_type in ["so100"]:
+            is_grabber = False
+            for name in self.leader_arms:
+                if self.leader_arms[name].motors["gripper"][1] == "grabber":
+                    is_grabber = True
+            if is_grabber is True:
+                from grabber import Grabber
+                self.grabber = Grabber()
+                for name in self.leader_arms:
+                    self.grabber.set_leader_arm(self.leader_arms[name])
+                    self.leader_arms[name].set_grabber(self.grabber)
+
 
     def activate_calibration(self):
         """After calibration all motors function in human interpretable ranges.
@@ -437,10 +451,17 @@ class ManipulatorRobot:
             # Close the write lock so that Maximum_Acceleration gets written to EPROM address,
             # which is mandatory for Maximum_Acceleration to take effect after rebooting.
             self.follower_arms[name].write("Lock", 0)
-            # Set Maximum_Acceleration to 254 to speedup acceleration and deceleration of
-            # the motors. Note: this configuration is not in the official STS3215 Memory Table
-            self.follower_arms[name].write("Maximum_Acceleration", 254)
-            self.follower_arms[name].write("Acceleration", 254)
+            # Set Maximum_Acceleration to 10 to slowdown acceleration and deceleration of
+            # the 12V motors. Note: this configuration is not in the official STS3215 Memory Table
+            self.follower_arms[name].write("Maximum_Acceleration", 10)
+            self.follower_arms[name].write("Acceleration", 10)
+
+    def record_episode_pre(self, episode_index, policy):
+        for name in self.leader_arms:
+            return self.leader_arms[name].record_episode_pre(episode_index, policy)
+
+    def record_episode_post(self):
+        return self.grabber.record_episode_post()
 
     def teleop_step(
         self, record_data=False
@@ -463,6 +484,9 @@ class ManipulatorRobot:
         for name in self.follower_arms:
             before_fwrite_t = time.perf_counter()
             goal_pos = leader_pos[name]
+            if goal_pos is None:
+                goal_pos = self.follower_arms[name].read("Present_Position")
+                goal_pos = torch.from_numpy(goal_pos)
 
             # Cap goal position when too far away from present position.
             # Slower fps expected due to reading from the follower.

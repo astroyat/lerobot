@@ -134,6 +134,14 @@ def run_lekiwi(robot_config):
         motors_bus.write("Maximum_Acceleration", 10, motor)
         motors_bus.write("Acceleration", 10, motor)
 
+    for motor in arm_motor_ids:
+        motors_bus.write("Torque_Enable", TorqueMode.ENABLED.value, motor)
+
+    rest_deg = [0, 180, 180, 60, 90, 0]
+    for motor, pos in zip(arm_motor_ids, rest_deg):
+        motors_bus.write("Goal_Position", pos, motor)
+    time.sleep(5)
+
     # Disable torque for each arm motor.
     for motor in arm_motor_ids:
         motors_bus.write("Torque_Enable", TorqueMode.DISABLED.value, motor)
