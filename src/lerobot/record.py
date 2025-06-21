@@ -93,6 +93,7 @@ from lerobot.teleoperators import (  # noqa: F401
     koch_leader,
     make_teleoperator_from_config,
     so100_leader,
+    csvfile_leader,
     so101_leader,
 )
 from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop
@@ -212,6 +213,7 @@ def record_loop(
                     t,
                     (
                         so100_leader.SO100Leader,
+                        csvfile_leader.CsvFileLeader,
                         so101_leader.SO101Leader,
                         koch_leader.KochLeader,
                     ),
@@ -231,7 +233,7 @@ def record_loop(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
-    while timestamp < control_time_s:
+    while control_time_s == 0:
         start_loop_t = time.perf_counter()
 
         if events["exit_early"]:
@@ -259,10 +261,12 @@ def record_loop(
             # TODO(pepijn, steven): clean the record loop for use of multiple robots (possibly with pipeline)
             arm_action = teleop_arm.get_action()
             arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
-
-            keyboard_action = teleop_keyboard.get_action()
-            base_action = robot._from_keyboard_to_base_action(keyboard_action)
-
+            if teleop_arm.grabber.is_detect is True:
+                base_action = teleop_arm.grabber.record_episode_detect()
+            elif teleop_arm.grabber.is_base is True:
+                base_action = teleop_arm.grabber.record_episode_base()
+            elif teleop_arm.lines == 0:
+                control_time_s = 1
             action = {**arm_action, **base_action} if len(base_action) > 0 else arm_action
         else:
             logging.info(
