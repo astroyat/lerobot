@@ -21,27 +21,27 @@ from lerobot.robots.lekiwi.config_lekiwi import LeKiwiClientConfig
 from lerobot.robots.lekiwi.lekiwi_client import LeKiwiClient
 from lerobot.scripts.lerobot_record import record_loop
 from lerobot.teleoperators.keyboard import KeyboardTeleop, KeyboardTeleopConfig
-from lerobot.teleoperators.so100_leader import SO100Leader, SO100LeaderConfig
+from lerobot.teleoperators.csvfile_leader import CsvFileLeader, CsvFileLeaderConfig
 from lerobot.utils.constants import ACTION, OBS_STR
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.utils import log_say
-from lerobot.utils.visualization_utils import init_rerun
+#from lerobot.utils.visualization_utils import init_rerun
 
 NUM_EPISODES = 2
 FPS = 30
-EPISODE_TIME_SEC = 30
+EPISODE_TIME_SEC = 0
 RESET_TIME_SEC = 10
-TASK_DESCRIPTION = "My task description"
-HF_REPO_ID = "<hf_username>/<dataset_repo_id>"
+TASK_DESCRIPTION = "Pick paper ball"
+HF_REPO_ID = "astroyat/paperball3"
 
 # Create the robot and teleoperator configurations
-robot_config = LeKiwiClientConfig(remote_ip="172.18.134.136", id="lekiwi")
-leader_arm_config = SO100LeaderConfig(port="/dev/tty.usbmodem585A0077581", id="my_awesome_leader_arm")
+robot_config = LeKiwiClientConfig(remote_ip="192.168.68.94", id="lekiwi")
+leader_arm_config = CsvFileLeaderConfig(port="arm.csv", id="csvfile_leader_arm")
 keyboard_config = KeyboardTeleopConfig()
 
 # Initialize the robot and teleoperator
 robot = LeKiwiClient(robot_config)
-leader_arm = SO100Leader(leader_arm_config)
+leader_arm = CsvFileLeader(leader_arm_config)
 keyboard = KeyboardTeleop(keyboard_config)
 
 # TODO(Steven): Update this example to use pipelines
@@ -68,9 +68,15 @@ robot.connect()
 leader_arm.connect()
 keyboard.connect()
 
+leader_arm.grabber.robot = robot
+leader_arm.grabber.teleop_arm = leader_arm
+
+observation = robot.get_observation()
+leader_arm.grabber.set_joint(observation["observation.state"][:6])
+
 # Initialize the keyboard listener and rerun visualization
 listener, events = init_keyboard_listener()
-init_rerun(session_name="lekiwi_record")
+#init_rerun(session_name="lekiwi_record")
 
 if not robot.is_connected or not leader_arm.is_connected or not keyboard.is_connected:
     raise ValueError("Robot or teleop is not connected!")
@@ -78,6 +84,25 @@ if not robot.is_connected or not leader_arm.is_connected or not keyboard.is_conn
 print("Starting record loop...")
 recorded_episodes = 0
 while recorded_episodes < NUM_EPISODES and not events["stop_recording"]:
+    base_action = {
+        "x.vel": 0.0,
+        "y.vel": 0.0,
+        "theta.vel": 0.0,
+    }
+
+    lines = leader_arm.grabber.move_camera()
+    for _ in range(lines):
+        arm_action = leader_arm.get_action()
+        arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
+        robot.send_action(arm_action | base_action)
+
+    leader_arm.grabber.is_detect = True
+    while leader_arm.grabber.is_detect is True:
+        arm_action = leader_arm.get_action()
+        arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
+        base_action = leader_arm.grabber.record_episode_detect()
+        robot.send_action(arm_action | base_action)
+
     log_say(f"Recording episode {recorded_episodes}")
 
     # Main record loop
@@ -89,7 +114,7 @@ while recorded_episodes < NUM_EPISODES and not events["stop_recording"]:
         teleop=[leader_arm, keyboard],
         control_time_s=EPISODE_TIME_SEC,
         single_task=TASK_DESCRIPTION,
-        display_data=True,
+        display_data=False,
         teleop_action_processor=teleop_action_processor,
         robot_action_processor=robot_action_processor,
         robot_observation_processor=robot_observation_processor,
@@ -107,7 +132,7 @@ while recorded_episodes < NUM_EPISODES and not events["stop_recording"]:
             teleop=[leader_arm, keyboard],
             control_time_s=RESET_TIME_SEC,
             single_task=TASK_DESCRIPTION,
-            display_data=True,
+            display_data=False,
             teleop_action_processor=teleop_action_processor,
             robot_action_processor=robot_action_processor,
             robot_observation_processor=robot_observation_processor,
