@@ -129,6 +129,32 @@ class LeKiwi(Robot):
     def is_calibrated(self) -> bool:
         return self.bus.is_calibrated
 
+    # Factory calibration presets for standard 3D-printed LeKiwi builds.
+    # Defines hardware homing offsets for the 6-DOF arm and continuous rotation limits for the 3-wheel base,
+    # enabling headless provisioning and automated startup without requiring interactive manual sweeping.
+    STANDARD_CALIBRATION = {
+        "arm_shoulder_pan": MotorCalibration(id=1, drive_mode=0, homing_offset=33, range_min=0, range_max=4095),
+        "arm_shoulder_lift": MotorCalibration(id=2, drive_mode=0, homing_offset=33, range_min=0, range_max=4095),
+        "arm_elbow_flex": MotorCalibration(id=3, drive_mode=0, homing_offset=73, range_min=0, range_max=4095),
+        "arm_wrist_flex": MotorCalibration(id=4, drive_mode=0, homing_offset=133, range_min=0, range_max=4095),
+        "arm_wrist_roll": MotorCalibration(id=5, drive_mode=0, homing_offset=73, range_min=0, range_max=4095),
+        "arm_gripper": MotorCalibration(id=6, drive_mode=0, homing_offset=33, range_min=0, range_max=4095),
+        "base_left_wheel": MotorCalibration(id=7, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
+        "base_back_wheel": MotorCalibration(id=8, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
+        "base_right_wheel": MotorCalibration(id=9, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
+    }
+
+    @classmethod
+    def get_standard_calibration(cls) -> dict[str, MotorCalibration]:
+        return cls.STANDARD_CALIBRATION.copy()
+
+    def write_standard_calibration(self) -> None:
+        """Write standard LeKiwi calibration to motors and save to disk."""
+        self.calibration = self.get_standard_calibration()
+        self.bus.write_calibration(self.calibration)
+        self._save_calibration()
+        print("Standard calibration saved to", self.calibration_fpath)
+
     def calibrate(self) -> None:
         if self._keep_calibration_file(self.bus):
             return
@@ -371,10 +397,14 @@ class LeKiwi(Robot):
             arm_safe_goal_pos = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
             arm_goal_pos = arm_safe_goal_pos
 
-        # Send goal position to the actuators
-        arm_goal_pos_raw = {k.replace(".pos", ""): v for k, v in arm_goal_pos.items()}
-        self.bus.sync_write("Goal_Position", arm_goal_pos_raw)
-        self.bus.sync_write("Goal_Velocity", base_wheel_goal_vel)
+        # Only sync_write to actuators when commands are present.
+        # This decouples base-only actions (e.g. ROS 2 /cmd_vel navigation where arm torque
+        # is disabled) and arm-only actions, avoiding empty writes to rustypot.
+        if arm_goal_pos:
+            arm_goal_pos_raw = {k.replace(".pos", ""): v for k, v in arm_goal_pos.items()}
+            self.bus.sync_write("Goal_Position", arm_goal_pos_raw)
+        if base_wheel_goal_vel:
+            self.bus.sync_write("Goal_Velocity", base_wheel_goal_vel)
 
         return {**arm_goal_pos, **base_goal_vel}
 

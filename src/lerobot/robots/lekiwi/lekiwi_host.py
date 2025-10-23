@@ -76,12 +76,20 @@ def main(cfg: LeKiwiServerConfig) -> None:
         # Business logic
         start = time.perf_counter()
         duration = 0.0
-        while duration < host.connection_time_s:
+        while True:  # duration < host.connection_time_s:
             loop_start_time = time.time()
             try:
                 msg = host.zmq_cmd_socket.recv_string(zmq.NOBLOCK)
                 data = dict(json.loads(msg))
-                _action_sent = robot.send_action(data)
+                if data.get("cmd") == "disable_arm_torque":
+                    logging.info("Disabling arm motor torque...")
+                    for name in robot.arm_motors:
+                        try:
+                            robot.bus.write("Torque_Enable", name, 0)
+                        except Exception as err:
+                            logging.warning(f"Failed to disable torque on {name}: {err}")
+                else:
+                    _action_sent = robot.send_action(data)
                 last_cmd_time = time.time()
                 watchdog_active = False
             except zmq.Again:

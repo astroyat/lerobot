@@ -20,7 +20,7 @@ from functools import cached_property
 
 from lerobot.cameras import DepthCamera, make_cameras_from_configs
 from lerobot.lerobot_types import RobotAction, RobotObservation
-from lerobot.motors import Motor, MotorNormMode, SerialMotorsBus
+from lerobot.motors import Motor, MotorCalibration, MotorNormMode, SerialMotorsBus
 from lerobot.utils.decorators import check_if_already_connected, check_if_not_connected
 
 from ..robot import Robot
@@ -131,6 +131,29 @@ class SOFollower(Robot):
     def is_calibrated(self) -> bool:
         return self.bus.is_calibrated
 
+    # Factory calibration presets for standard SO-100 / SO-101 follower arms.
+    # Sets homing offsets to 0 and defines full encoder ranges [0, 4095], enabling
+    # headless provisioning and automated startup without requiring interactive manual sweeping.
+    STANDARD_CALIBRATION = {
+        "shoulder_pan": MotorCalibration(id=1, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
+        "shoulder_lift": MotorCalibration(id=2, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
+        "elbow_flex": MotorCalibration(id=3, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
+        "wrist_flex": MotorCalibration(id=4, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
+        "wrist_roll": MotorCalibration(id=5, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
+        "gripper": MotorCalibration(id=6, drive_mode=0, homing_offset=0, range_min=0, range_max=4095),
+    }
+
+    @classmethod
+    def get_standard_calibration(cls) -> dict[str, MotorCalibration]:
+        return cls.STANDARD_CALIBRATION.copy()
+
+    def write_standard_calibration(self) -> None:
+        """Write standard SO-100/101 calibration to motors and save to disk."""
+        self.calibration = self.get_standard_calibration()
+        self.bus.write_calibration(self.calibration)
+        self._save_calibration()
+        print("Standard calibration saved to", self.calibration_fpath)
+
     def calibrate(self) -> None:
         if self._keep_calibration_file(self.bus):
             return
@@ -208,8 +231,10 @@ class SOFollower(Robot):
             goal_present_pos = {key: (g_pos, present_pos[key]) for key, g_pos in goal_pos.items()}
             goal_pos = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
 
-        # Send goal position to the arm
-        self.bus.sync_write("Goal_Position", goal_pos)
+        # Send goal position to the arm if joint positions are provided.
+        # Avoids attempting empty sync writes to rustypot when no joint targets are commanded.
+        if goal_pos:
+            self.bus.sync_write("Goal_Position", goal_pos)
         return {f"{motor}.pos": val for motor, val in goal_pos.items()}
 
     @check_if_not_connected
