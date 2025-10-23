@@ -63,11 +63,15 @@ class LeKiwiClient(Robot):
 
         # Define three speed levels and a current index
         self.speed_levels = [
-            {"xy": 0.1, "theta": 30},  # slow
+            {"xy": 0.1, "theta": 10},  # slow
             {"xy": 0.2, "theta": 60},  # medium
             {"xy": 0.3, "theta": 90},  # fast
         ]
         self.speed_index = 0  # Start at slow
+
+        self.node = None
+        self.spin_thread = None
+        self.twist = None
 
         self._is_connected = False
         self.logs = {}
@@ -113,6 +117,9 @@ class LeKiwiClient(Robot):
     def is_calibrated(self) -> bool:
         pass
 
+    def listener_callback(self, twist):
+        self.twist = twist
+
     @check_if_already_connected
     def connect(self) -> None:
         """Establishes ZMQ sockets with the remote mobile robot"""
@@ -134,6 +141,20 @@ class LeKiwiClient(Robot):
         socks = dict(poller.poll(self.connect_timeout_s * 1000))
         if self.zmq_observation_socket not in socks or socks[self.zmq_observation_socket] != zmq.POLLIN:
             raise DeviceNotConnectedError("Timeout waiting for LeKiwi Host to connect expired.")
+
+        import rclpy
+        from rclpy.node import Node
+        from geometry_msgs.msg import Twist
+        import threading
+        from functools import partial
+
+        rclpy.init()
+        self.node = Node("cmd_vel_subscriber")
+        self.node.create_subscription(
+            Twist, "cmd_vel", partial(self.listener_callback), 10
+        )
+        self.spin_thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
+        self.spin_thread.start()
 
         self._is_connected = True
 
@@ -300,6 +321,33 @@ class LeKiwiClient(Robot):
             "theta.vel": theta_cmd,
         }
 
+    def _from_twist_to_base_action(self):
+        if self.twist:
+            speed_setting = self.speed_levels[self.speed_index]
+            xy_speed = speed_setting["xy"]  # e.g. 0.1, 0.25, or 0.4
+            theta_speed = speed_setting["theta"]  # e.g. 30, 60, or 90
+
+            x_cmd = 0.0  # m/s forward/backward
+            y_cmd = 0.0  # m/s lateral
+            theta_cmd = 0.0  # deg/s rotation
+
+            if self.twist.linear.x > 0.1:
+                x_cmd += xy_speed
+            elif self.twist.linear.x < -0.1:
+                x_cmd -= xy_speed
+            if self.twist.angular.z > 0.1:
+                theta_cmd += theta_speed
+            elif self.twist.angular.z < -0.1:
+                theta_cmd -= theta_speed
+            self.twist = None
+            return {
+                "x.vel": x_cmd,
+                "y.vel": y_cmd,
+                "theta.vel": theta_cmd,
+            }
+        else:
+            return None
+
     def configure(self):
         pass
 
@@ -332,4 +380,10 @@ class LeKiwiClient(Robot):
         self.zmq_observation_socket.close()
         self.zmq_cmd_socket.close()
         self.zmq_context.term()
+        if self.node:
+            import rclpy
+            self.node.destroy_node()
+            rclpy.shutdown()
+        if self.spin_thread:
+            self.spin_thread.join()
         self._is_connected = False
