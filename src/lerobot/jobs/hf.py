@@ -39,7 +39,10 @@ from huggingface_hub import (
     run_job,
     upload_file,
 )
-from huggingface_hub.utils import httpx
+try:
+    from huggingface_hub.utils import httpx
+except ImportError:
+    import httpx
 
 from lerobot.common.train_utils import push_checkpoint_to_hub
 from lerobot.configs import parser

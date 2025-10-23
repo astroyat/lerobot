@@ -24,7 +24,11 @@ from uuid import uuid4
 
 import fsspec
 from huggingface_hub import HfApi, HfFileSystem, constants
-from huggingface_hub.utils import hf_raise_for_status, httpx
+from huggingface_hub.utils import hf_raise_for_status
+try:
+    from huggingface_hub.utils import httpx
+except ImportError:
+    import httpx
 
 from .location import LocationKind, StorageLocation
 

@@ -63,7 +63,7 @@ class LeKiwiConfig(RobotConfig):
     # return a corrupted status packet ("Incorrect status packet!"), especially when several joints move
     # at once, which otherwise aborts the control loop. Retries are immediate (no sleep) and only happen on
     # failure, so the steady-state read cost is unchanged.
-    num_read_retries: int = 2
+    num_read_retries: int = 3
 
 
 @dataclass
