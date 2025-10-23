@@ -75,11 +75,15 @@ class LeKiwiClient(Robot):
 
         # Define three speed levels and a current index
         self.speed_levels = [
-            {"xy": 0.1, "theta": 30},  # slow
+            {"xy": 0.1, "theta": 10},  # slow
             {"xy": 0.2, "theta": 60},  # medium
             {"xy": 0.3, "theta": 90},  # fast
         ]
         self.speed_index = 0  # Start at slow
+
+        self.node = None
+        self.spin_thread = None
+        self.twist = None
 
         self._is_connected = False
         self.logs: dict[str, float] = {}
@@ -126,6 +130,9 @@ class LeKiwiClient(Robot):
         # Calibration lives on the host; the client has nothing to calibrate.
         return True
 
+    def listener_callback(self, twist):
+        self.twist = twist
+
     @check_if_already_connected
     def connect(self) -> None:
         """Establishes ZMQ sockets with the remote mobile robot"""
@@ -149,6 +156,23 @@ class LeKiwiClient(Robot):
         socks = dict(poller.poll(self.connect_timeout_s * 1000))
         if self.zmq_observation_socket not in socks or socks[self.zmq_observation_socket] != zmq.POLLIN:
             raise DeviceNotConnectedError("Timeout waiting for LeKiwi Host to connect expired.")
+
+        try:
+            import rclpy
+            from rclpy.node import Node
+            from geometry_msgs.msg import Twist
+            import threading
+            from functools import partial
+
+            rclpy.init()
+            self.node = Node("cmd_vel_subscriber")
+            self.node.create_subscription(
+                Twist, "cmd_vel", partial(self.listener_callback), 10
+            )
+            self.spin_thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
+            self.spin_thread.start()
+        except (ImportError, RuntimeError) as e:
+            print("[!] ROS 2 Import Failed")
 
         self._is_connected = True
 
@@ -317,6 +341,32 @@ class LeKiwiClient(Robot):
             "theta.vel": theta_cmd,
         }
 
+    def _from_twist_to_base_action(self):
+        if self.twist:
+            x_cmd = 0.0
+            y_cmd = 0.0
+            theta_cmd = 0.0
+
+            # Deadband threshold
+            if abs(self.twist.linear.x) > 0.02:
+                x_cmd = float(self.twist.linear.x)
+            if abs(self.twist.linear.y) > 0.02:
+                y_cmd = float(self.twist.linear.y)
+            # Twist angular.z is in rad/s, convert to deg/s for LeKiwi kinematics
+            if abs(self.twist.angular.z) > 0.02:
+                theta_cmd = float(self.twist.angular.z * (180.0 / np.pi))
+
+            self.twist = None
+            if x_cmd != 0.0 or y_cmd != 0.0 or theta_cmd != 0.0:
+                print(f"[cmd_vel -> Base] x={x_cmd:.2f} m/s, y={y_cmd:.2f} m/s, theta={theta_cmd:.1f} deg/s")
+            return {
+                "x.vel": x_cmd,
+                "y.vel": y_cmd,
+                "theta.vel": theta_cmd,
+            }
+        else:
+            return None
+
     def configure(self) -> None:
         pass
 
@@ -349,6 +399,13 @@ class LeKiwiClient(Robot):
         return action_sent
 
     @check_if_not_connected
+    def disable_arm_torque(self) -> None:
+        """Sends command to host to disable torque on all arm motors"""
+        if self.zmq_cmd_socket is None:
+            raise DeviceNotConnectedError(f"{self} command socket is not initialized")
+        self.zmq_cmd_socket.send_string(json.dumps({"cmd": "disable_arm_torque"}))
+
+    @check_if_not_connected
     def disconnect(self) -> None:
         """Cleans ZMQ comms"""
 
@@ -357,4 +414,10 @@ class LeKiwiClient(Robot):
         self.zmq_observation_socket.close()
         self.zmq_cmd_socket.close()
         self.zmq_context.term()
+        if self.node:
+            import rclpy
+            self.node.destroy_node()
+            rclpy.shutdown()
+        if self.spin_thread:
+            self.spin_thread.join()
         self._is_connected = False

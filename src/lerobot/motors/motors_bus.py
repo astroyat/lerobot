@@ -789,7 +789,14 @@ class SerialMotorsBus(MotorsBusBase):
         """
         for motor, calibration in calibration_dict.items():
             if self._has_register(motor, "Homing_Offset"):
-                self.write("Homing_Offset", motor, calibration.homing_offset)
+                offset = calibration.homing_offset
+                # Clamp sign-magnitude registers (e.g. Feetech [-2047, 2047] on 12-bit encoders)
+                # to prevent overflow crashes when offset magnitude reaches 2^sign_bit (e.g. 2048).
+                reg = self._definition(motor).register("homing_offset")
+                if reg is not None and (sign_bit := reg.sign_bit) is not None:
+                    max_mag = (1 << sign_bit) - 1
+                    offset = max(-max_mag, min(max_mag, offset))
+                self.write("Homing_Offset", motor, offset)
             self.write("Min_Position_Limit", motor, calibration.range_min)
             self.write("Max_Position_Limit", motor, calibration.range_max)
 
