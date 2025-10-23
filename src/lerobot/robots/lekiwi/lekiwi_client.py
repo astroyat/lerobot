@@ -16,6 +16,7 @@
 
 import json
 import logging
+import time
 from functools import cached_property
 from typing import TYPE_CHECKING
 
@@ -175,6 +176,7 @@ class LeKiwiClient(Robot):
             print("[!] ROS 2 Import Failed")
 
         self._is_connected = True
+        self.flush_frames()
 
     def calibrate(self) -> None:
         pass
@@ -308,6 +310,23 @@ class LeKiwiClient(Robot):
             obs_dict[cam_name] = frame
 
         return obs_dict
+
+    def flush_frames(self, num_fresh_frames: int = 5) -> RobotObservation:
+        """Drains any buffered stale messages from ZMQ and returns fresh live observations."""
+        if self.zmq_observation_socket is not None:
+            zmq = self._zmq
+            while True:
+                try:
+                    self.zmq_observation_socket.recv_multipart(zmq.NOBLOCK)
+                except (zmq.Again, zmq.ZMQError):
+                    break
+        self.last_frames = {}
+        self.last_remote_state = {}
+        obs = None
+        for _ in range(max(1, num_fresh_frames)):
+            time.sleep(0.035)
+            obs = self.get_observation()
+        return obs
 
     def _from_keyboard_to_base_action(self, pressed_keys: np.ndarray):
         # Speed control

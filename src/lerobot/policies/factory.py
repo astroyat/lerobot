@@ -247,7 +247,7 @@ def has_peft_adapter_config(
         return os.path.isfile(os.path.join(pretrained_path, PEFT_ADAPTER_CONFIG_NAME))
 
     try:
-        hf_hub_download(pretrained_path, PEFT_ADAPTER_CONFIG_NAME, revision=revision)
+        hf_hub_download(pretrained_path.replace("\\", "/"), PEFT_ADAPTER_CONFIG_NAME, revision=revision)
     except EntryNotFoundError:  # also raised offline when the file is not cached
         return False
     return True
@@ -338,7 +338,7 @@ def make_policy(
 
     if ds_meta is not None or not cfg.output_features:
         cfg.output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
-    if not cfg.input_features:
+    if not cfg.input_features or (ds_meta is not None and cfg.pretrained_path):
         cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
 
     # Store action feature names for relative_exclude_joints support
@@ -405,7 +405,11 @@ def make_policy(
             # are inference-time hyperparameters that we want to vary). This also covers starting
             # a fresh PEFT fine-tune on top of a base model: the base weights are loaded here and
             # `wrap_with_peft` builds the adapter afterwards.
-            kwargs["pretrained_name_or_path"] = cfg.pretrained_path
+            kwargs["pretrained_name_or_path"] = (
+                str(cfg.pretrained_path).replace("\\", "/")
+                if not os.path.isdir(str(cfg.pretrained_path))
+                else cfg.pretrained_path
+            )
             kwargs["revision"] = cfg.pretrained_revision
             policy = policy_cls.from_pretrained(**kwargs)
     elif load_existing_adapter:
@@ -416,13 +420,21 @@ def make_policy(
 
         logging.info("Loading policy's PEFT adapter.")
 
-        peft_pretrained_path = str(cfg.pretrained_path)
+        peft_pretrained_path = (
+            str(cfg.pretrained_path).replace("\\", "/")
+            if not os.path.isdir(str(cfg.pretrained_path))
+            else str(cfg.pretrained_path)
+        )
         peft_config = PeftConfig.from_pretrained(
             peft_pretrained_path,
             revision=cfg.pretrained_revision,
         )
 
-        kwargs["pretrained_name_or_path"] = peft_config.base_model_name_or_path
+        kwargs["pretrained_name_or_path"] = (
+            str(peft_config.base_model_name_or_path).replace("\\", "/")
+            if peft_config.base_model_name_or_path
+            else peft_config.base_model_name_or_path
+        )
         if not kwargs["pretrained_name_or_path"]:
             # This means that there's a bug or we trained a policy from scratch using PEFT.
             # It is more likely that this is a bug so we'll raise an error.

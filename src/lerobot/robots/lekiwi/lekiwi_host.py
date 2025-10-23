@@ -106,7 +106,12 @@ def main(cfg: LeKiwiServerConfig) -> None:
                 watchdog_active = True
                 robot.stop_base()
 
-            last_observation = robot.get_observation()
+            try:
+                last_observation = robot.get_observation()
+            except ConnectionError as e:
+                logging.warning(f"Transient bus read failure in get_observation, reusing last frame: {e}")
+                if "last_observation" not in locals() or last_observation is None:
+                    continue
 
             # Send one multipart message: a JSON header frame (state + camera
             # order) followed by one raw JPEG frame per camera. Raw JPEG avoids

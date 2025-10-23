@@ -751,6 +751,8 @@ class DataProcessorPipeline[TInput, TOutput](HubMixin):
         model_id = str(pretrained_model_name_or_path)
         model_path = Path(model_id)
         is_local_source = model_path.is_dir() or model_path.is_file()
+        if not is_local_source:
+            model_id = model_id.replace("\\", "/")
         hub_download_kwargs = {
             "force_download": force_download,
             "token": token,

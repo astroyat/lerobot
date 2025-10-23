@@ -41,7 +41,10 @@ from huggingface_hub import (
     snapshot_download,
 )
 from huggingface_hub.errors import HFValidationError, OfflineModeIsEnabled
-from huggingface_hub.utils import httpx
+try:
+    from huggingface_hub.utils import httpx
+except ImportError:
+    import httpx
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 
