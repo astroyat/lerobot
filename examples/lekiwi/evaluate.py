@@ -16,30 +16,59 @@
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import hw_to_dataset_features
-from lerobot.policies.act.modeling_act import ACTPolicy
+from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.processor import make_default_processors
 from lerobot.robots.lekiwi import LeKiwiClient, LeKiwiClientConfig
+from lerobot.teleoperators.keyboard.teleop_keyboard import (
+    KeyboardTeleop,
+    KeyboardTeleopConfig,
+)
+from lerobot.teleoperators.csvfile_leader import (
+    CsvFileLeader,
+    CsvFileLeaderConfig,
+)
 from lerobot.scripts.lerobot_record import record_loop
 from lerobot.utils.constants import ACTION, OBS_STR
 from lerobot.utils.control_utils import init_keyboard_listener
 from lerobot.utils.utils import log_say
-from lerobot.utils.visualization_utils import init_rerun
+#from lerobot.utils.visualization_utils import init_rerun
 
 NUM_EPISODES = 2
 FPS = 30
-EPISODE_TIME_SEC = 60
-TASK_DESCRIPTION = "My task description"
-HF_MODEL_ID = "<hf_username>/<model_repo_id>"
-HF_DATASET_ID = "<hf_username>/<eval_dataset_repo_id>"
+EPISODE_TIME_SEC = 0
+TASK_DESCRIPTION = "Pick paper ball"
+HF_MODEL_ID = "astroyat/smolvla_paperball3"
+HF_DATASET_ID = "astroyat/eval_paperball3"
 
 # Create the robot configuration & robot
-robot_config = LeKiwiClientConfig(remote_ip="172.18.134.136", id="lekiwi")
+robot_config = LeKiwiClientConfig(remote_ip="192.168.68.94", id="lekiwi")
 
 robot = LeKiwiClient(robot_config)
 
+teleop_arm_config = CsvFileLeaderConfig(
+    port="arm.csv",
+    id="csvfile_leader_arm",
+)
+
+teleop_keyboard_config = KeyboardTeleopConfig()
+
+robot = LeKiwiClient(robot_config)
+teleop_arm = CsvFileLeader(teleop_arm_config)
+teleop_keyboard = KeyboardTeleop(teleop_keyboard_config)
+
+robot.connect()
+teleop_arm.connect()
+teleop_keyboard.connect()
+
+teleop_arm.grabber.robot = robot
+teleop_arm.grabber.teleop_arm = teleop_arm
+
+observation = robot.get_observation()
+teleop_arm.grabber.set_joint(observation["observation.state"][:6])
+
 # Create policy
-policy = ACTPolicy.from_pretrained(HF_MODEL_ID)
+policy = SmolVLAPolicy.from_pretrained(HF_MODEL_ID)
 
 # Configure the dataset features
 action_features = hw_to_dataset_features(robot.action_features, ACTION)
@@ -67,14 +96,14 @@ preprocessor, postprocessor = make_pre_post_processors(
 
 # Connect the robot
 # To connect you already should have this script running on LeKiwi: `python -m lerobot.robots.lekiwi.lekiwi_host --robot.id=my_awesome_kiwi`
-robot.connect()
+#robot.connect()
 
 # TODO(Steven): Update this example to use pipelines
 teleop_action_processor, robot_action_processor, robot_observation_processor = make_default_processors()
 
 # Initialize the keyboard listener and rerun visualization
 listener, events = init_keyboard_listener()
-init_rerun(session_name="lekiwi_evaluate")
+#init_rerun(session_name="lekiwi_evaluate")
 
 if not robot.is_connected:
     raise ValueError("Robot is not connected!")
@@ -83,6 +112,7 @@ print("Starting evaluate loop...")
 recorded_episodes = 0
 while recorded_episodes < NUM_EPISODES and not events["stop_recording"]:
     log_say(f"Running inference, recording eval episode {recorded_episodes} of {NUM_EPISODES}")
+    teleop_arm.grabber.is_policy = True
 
     # Main record loop
     record_loop(
@@ -95,7 +125,7 @@ while recorded_episodes < NUM_EPISODES and not events["stop_recording"]:
         dataset=dataset,
         control_time_s=EPISODE_TIME_SEC,
         single_task=TASK_DESCRIPTION,
-        display_data=True,
+        display_data=False,
         teleop_action_processor=teleop_action_processor,
         robot_action_processor=robot_action_processor,
         robot_observation_processor=robot_observation_processor,
@@ -112,7 +142,7 @@ while recorded_episodes < NUM_EPISODES and not events["stop_recording"]:
             fps=FPS,
             control_time_s=EPISODE_TIME_SEC,
             single_task=TASK_DESCRIPTION,
-            display_data=True,
+            display_data=False,
             teleop_action_processor=teleop_action_processor,
             robot_action_processor=robot_action_processor,
             robot_observation_processor=robot_observation_processor,
