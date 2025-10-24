@@ -16,7 +16,7 @@
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import hw_to_dataset_features
-from lerobot.policies.act.modeling_act import ACTPolicy
+from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 from lerobot.policies.factory import make_pre_post_processors
 from lerobot.processor import make_default_processors
 from lerobot.robots.lekiwi import LeKiwiClient, LeKiwiClientConfig
@@ -33,7 +33,7 @@ FPS = 30
 EPISODE_TIME_SEC = 0
 RESET_TIME_SEC = 10
 TASK_DESCRIPTION = "Pick paper ball"
-HF_MODEL_ID = "astroyat/act_paperball22"
+HF_MODEL_ID = "astroyat/smolvla_paperball22"
 HF_REPO_ID = "astroyat/eval_paperball2"
 
 # Create the robot and teleoperator configurations
@@ -47,7 +47,7 @@ leader_arm = CsvArmLeader(leader_arm_config)
 keyboard = KeyboardTeleop(keyboard_config)
 
 # Create policy
-policy = ACTPolicy.from_pretrained(HF_MODEL_ID)
+policy = SmolVLAPolicy.from_pretrained(HF_MODEL_ID)
 
 # TODO(Steven): Update this example to use pipelines
 teleop_action_processor, robot_action_processor, robot_observation_processor = make_default_processors()
