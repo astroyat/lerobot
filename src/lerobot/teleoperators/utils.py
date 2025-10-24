@@ -45,6 +45,12 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> Teleoperator:
         from .so100_leader import SO100Leader
 
         return SO100Leader(config)
+
+    elif config.type == "csvfile_leader":
+        from .csvfile_leader import CsvFileLeader
+
+        return CsvFileLeader(config)
+
     elif config.type == "so101_leader":
         from .so101_leader import SO101Leader
 

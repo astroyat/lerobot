@@ -16,6 +16,8 @@
 
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import hw_to_dataset_features
+from lerobot.policies.act.modeling_act import ACTPolicy
+from lerobot.policies.factory import make_pre_post_processors
 from lerobot.processor import make_default_processors
 from lerobot.robots.lekiwi.config_lekiwi import LeKiwiClientConfig
 from lerobot.robots.lekiwi.lekiwi_client import LeKiwiClient
@@ -32,7 +34,8 @@ FPS = 30
 EPISODE_TIME_SEC = 0
 RESET_TIME_SEC = 10
 TASK_DESCRIPTION = "Pick paper ball"
-HF_REPO_ID = "astroyat/paperball3"
+HF_MODEL_ID = "astroyat/act_paperball22"
+HF_REPO_ID = "astroyat/eval_paperball2"
 
 # Create the robot and teleoperator configurations
 robot_config = LeKiwiClientConfig(remote_ip="192.168.68.94", id="lekiwi")
@@ -43,6 +46,9 @@ keyboard_config = KeyboardTeleopConfig()
 robot = LeKiwiClient(robot_config)
 leader_arm = CsvFileLeader(leader_arm_config)
 keyboard = KeyboardTeleop(keyboard_config)
+
+# Create policy
+policy = ACTPolicy.from_pretrained(HF_MODEL_ID)
 
 # TODO(Steven): Update this example to use pipelines
 teleop_action_processor, robot_action_processor, robot_observation_processor = make_default_processors()
@@ -62,6 +68,15 @@ dataset = LeRobotDataset.create(
     image_writer_threads=4,
 )
 
+# Build Policy Processors
+preprocessor, postprocessor = make_pre_post_processors(
+    policy_cfg=policy,
+    pretrained_path=HF_MODEL_ID,
+    dataset_stats=dataset.meta.stats,
+    # The inference device is automatically set to match the detected hardware, overriding any previous device settings from training to ensure compatibility.
+    preprocessor_overrides={"device_processor": {"device": str(policy.config.device)}},
+)
+
 # Connect the robot and teleoperator
 # To connect you already should have this script running on LeKiwi: `python -m lerobot.robots.lekiwi.lekiwi_host --robot.id=my_awesome_kiwi`
 robot.connect()
@@ -76,42 +91,27 @@ leader_arm.grabber.set_joint(observation["observation.state"][:6])
 
 # Initialize the keyboard listener and rerun visualization
 listener, events = init_keyboard_listener()
-#init_rerun(session_name="lekiwi_record")
+#init_rerun(session_name="lekiwi_evaluate")
 
 if not robot.is_connected or not leader_arm.is_connected or not keyboard.is_connected:
     raise ValueError("Robot or teleop is not connected!")
 
-print("Starting record loop...")
+print("Starting evaluate loop...")
 recorded_episodes = 0
 while recorded_episodes < NUM_EPISODES and not events["stop_recording"]:
-    base_action = {
-        "x.vel": 0.0,
-        "y.vel": 0.0,
-        "theta.vel": 0.0,
-    }
+    log_say(f"Running inference, recording eval episode {recorded_episodes} of {NUM_EPISODES}")
 
-    lines = leader_arm.grabber.move_camera()
-    for _ in range(lines):
-        arm_action = leader_arm.get_action()
-        arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
-        robot.send_action(arm_action | base_action)
-
-    leader_arm.grabber.is_detect = True
-    while leader_arm.grabber.is_detect is True:
-        arm_action = leader_arm.get_action()
-        arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
-        base_action = leader_arm.grabber.record_episode_detect()
-        robot.send_action(arm_action | base_action)
-
-    log_say(f"Recording episode {recorded_episodes}")
+    leader_arm.grabber.is_policy = True
 
     # Main record loop
     record_loop(
         robot=robot,
         events=events,
         fps=FPS,
+        policy=policy,
+        preprocessor=preprocessor,  # Pass the pre and post policy processors
+        postprocessor=postprocessor,
         dataset=dataset,
-        teleop=[leader_arm, keyboard],
         control_time_s=EPISODE_TIME_SEC,
         single_task=TASK_DESCRIPTION,
         display_data=False,
@@ -129,7 +129,6 @@ while recorded_episodes < NUM_EPISODES and not events["stop_recording"]:
             robot=robot,
             events=events,
             fps=FPS,
-            teleop=[leader_arm, keyboard],
             control_time_s=RESET_TIME_SEC,
             single_task=TASK_DESCRIPTION,
             display_data=False,
