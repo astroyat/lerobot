@@ -111,6 +111,9 @@ from lerobot.teleoperators import (  # noqa: F401
     make_teleoperator_from_config,
     omx_leader,
     so_leader,
+    so100_leader,
+    so101_leader,
+    csvarm_leader,
 )
 from lerobot.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop
 from lerobot.utils.constants import ACTION, OBS_STR
@@ -285,8 +288,9 @@ def record_loop(
                 if isinstance(
                     t,
                     (
-                        so_leader.SO100Leader
-                        | so_leader.SO101Leader
+                        so100_leader.SO100Leader
+                        | so101_leader.SO101Leader
+                        | csvarm_leader.CsvArmLeader
                         | koch_leader.KochLeader
                         | omx_leader.OmxLeader
                     ),
@@ -308,7 +312,8 @@ def record_loop(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
-    while timestamp < control_time_s:
+    #while timestamp < control_time_s:
+    while control_time_s == 0:
         start_loop_t = time.perf_counter()
 
         if events["exit_early"]:
@@ -349,7 +354,13 @@ def record_loop(
             arm_action = teleop_arm.get_action()
             arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
             keyboard_action = teleop_keyboard.get_action()
-            base_action = robot._from_keyboard_to_base_action(keyboard_action)
+            #base_action = robot._from_keyboard_to_base_action(keyboard_action)
+            if teleop_arm.grabber.is_detect is True:
+                base_action = teleop_arm.grabber.record_episode_detect()
+            elif teleop_arm.grabber.is_base is True:
+                base_action = teleop_arm.grabber.record_episode_base()
+            elif teleop_arm.lines == 0:
+                control_time_s = 1
             act = {**arm_action, **base_action} if len(base_action) > 0 else arm_action
             act_processed_teleop = teleop_action_processor((act, obs))
         else:

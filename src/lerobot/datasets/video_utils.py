@@ -190,7 +190,7 @@ class VideoDecoderCache:
         with self._lock:
             if video_path not in self._cache:
                 file_handle = fsspec.open(video_path).__enter__()
-                decoder = VideoDecoder(file_handle, seek_mode="approximate")
+                decoder = VideoDecoder(str(video_path), seek_mode="approximate")
                 self._cache[video_path] = (decoder, file_handle)
 
             return self._cache[video_path][0]
@@ -458,7 +458,8 @@ def concatenate_video_files(
             )
 
             # set the time base to the input stream time base (missing in the codec context)
-            stream_map[input_stream.index].time_base = input_stream.time_base
+            if stream_map[input_stream.index].codec_context.is_encoder:
+                stream_map[input_stream.index].time_base = input_stream.time_base
 
     # Demux + remux packets (no re-encode)
     for packet in input_container.demux():

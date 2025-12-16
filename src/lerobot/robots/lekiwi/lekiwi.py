@@ -61,7 +61,7 @@ class LeKiwi(Robot):
                 "arm_elbow_flex": Motor(3, "sts3215", norm_mode_body),
                 "arm_wrist_flex": Motor(4, "sts3215", norm_mode_body),
                 "arm_wrist_roll": Motor(5, "sts3215", norm_mode_body),
-                "arm_gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
+                "arm_gripper": Motor(6, "sts3215", norm_mode_body),
                 # base
                 "base_left_wheel": Motor(7, "sts3215", MotorNormMode.RANGE_M100_100),
                 "base_back_wheel": Motor(8, "sts3215", MotorNormMode.RANGE_M100_100),
@@ -147,7 +147,7 @@ class LeKiwi(Robot):
         for name in self.arm_motors:
             self.bus.write("Operating_Mode", name, OperatingMode.POSITION.value)
 
-        input("Move robot to the middle of its range of motion and press ENTER....")
+        #input("Move robot to the middle of its range of motion and press ENTER....")
         homing_offsets = self.bus.set_half_turn_homings(self.arm_motors)
 
         homing_offsets.update(dict.fromkeys(self.base_motors, 0))
@@ -161,10 +161,10 @@ class LeKiwi(Robot):
             f"Move all arm joints except '{full_turn_motor}' sequentially through their "
             "entire ranges of motion.\nRecording positions. Press ENTER to stop..."
         )
-        range_mins, range_maxes = self.bus.record_ranges_of_motion(unknown_range_motors)
-        for name in full_turn_motor:
-            range_mins[name] = 0
-            range_maxes[name] = 4095
+        #range_mins, range_maxes = self.bus.record_ranges_of_motion(unknown_range_motors)
+        #for name in full_turn_motor:
+        #    range_mins[name] = 0
+        #    range_maxes[name] = 4095
 
         self.calibration = {}
         for name, motor in self.bus.motors.items():
@@ -172,8 +172,8 @@ class LeKiwi(Robot):
                 id=motor.id,
                 drive_mode=0,
                 homing_offset=homing_offsets[name],
-                range_min=range_mins[name],
-                range_max=range_maxes[name],
+                range_min=0,
+                range_max=4095,
             )
 
         self.bus.write_calibration(self.calibration)
