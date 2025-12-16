@@ -149,6 +149,7 @@ from lerobot.teleoperators import (  # noqa: F401
     rebot_102_leader,
     so_leader,
     unitree_g1,
+    csvarm_leader,
 )
 from lerobot.teleoperators.keyboard import KeyboardTeleop
 from lerobot.utils.constants import ACTION, OBS_STR
@@ -271,6 +272,7 @@ def record_loop(
                     (
                         so_leader.SO100Leader
                         | so_leader.SO101Leader
+                        | csvarm_leader.CsvArmLeader
                         | koch_leader.KochLeader
                         | omx_leader.OmxLeader
                     ),
@@ -289,10 +291,7 @@ def record_loop(
 
     no_action_count = 0
     timestamp = 0
-    start_episode_t = time.perf_counter()
-    while timestamp < control_time_s:
-        # Checked before `tick()`: this iteration is not a control tick, so it should not
-        # be timed as one.
+    while timestamp < control_time_s or control_time_s == 0:
         if events["exit_early"]:
             events["exit_early"] = False
             break
@@ -326,7 +325,15 @@ def record_loop(
                 arm_action = teleop_arm.get_action()
                 arm_action = {f"arm_{k}": v for k, v in arm_action.items()}
                 keyboard_action = teleop_keyboard.get_action()
-                base_action = robot._from_keyboard_to_base_action(keyboard_action)
+                if hasattr(teleop_arm, "grabber") and teleop_arm.grabber.is_detect is True:
+                    base_action = teleop_arm.grabber.record_episode_detect()
+                elif hasattr(teleop_arm, "grabber") and teleop_arm.grabber.is_base is True:
+                    base_action = teleop_arm.grabber.record_episode_base()
+                elif hasattr(teleop_arm, "lines") and teleop_arm.lines == 0:
+                    control_time_s = 1
+                    base_action = robot._from_keyboard_to_base_action(keyboard_action)
+                else:
+                    base_action = robot._from_keyboard_to_base_action(keyboard_action)
                 act = {**arm_action, **base_action} if len(base_action) > 0 else arm_action
                 act_processed_teleop = teleop_action_processor((act, obs))
                 action_values = act_processed_teleop
