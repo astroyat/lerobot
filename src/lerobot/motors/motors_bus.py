@@ -698,6 +698,8 @@ class MotorsBus(abc.ABC):
 
         self.reset_calibration(motors)
         actual_positions = self.sync_read("Present_Position", motors, normalize=False)
+        #actual_positions = {'shoulder_pan': 2080, 'shoulder_lift': 2080, 'elbow_flex': 2120, 'wrist_flex': 2180, 'wrist_roll': 2120, 'gripper': 2080}
+        actual_positions = {'arm_shoulder_pan': 2080, 'arm_shoulder_lift': 2080, 'arm_elbow_flex': 2120, 'arm_wrist_flex': 2180, 'arm_wrist_roll': 2120, 'arm_gripper': 2080}
         homing_offsets = self._get_half_turn_homings(actual_positions)
         for motor, offset in homing_offsets.items():
             self.write("Homing_Offset", motor, offset)
