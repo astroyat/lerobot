@@ -776,8 +776,7 @@ class SerialMotorsBus(MotorsBusBase):
         motor_names = self._get_motors_list(motors)
 
         self.reset_calibration(motor_names)
-        #actual_positions = self.sync_read("Present_Position", motor_names, normalize=False)
-        actual_positions = {'arm_shoulder_pan': 2080, 'arm_shoulder_lift': 2080, 'arm_elbow_flex': 2120, 'arm_wrist_flex': 2180, 'arm_wrist_roll': 2120, 'arm_gripper': 2080}
+        actual_positions = self.sync_read("Present_Position", motor_names, normalize=False)
         homing_offsets = self._get_half_turn_homings(actual_positions)
         for motor, offset in homing_offsets.items():
             self.write("Homing_Offset", motor, offset)
